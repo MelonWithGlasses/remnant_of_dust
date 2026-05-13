@@ -646,12 +646,21 @@ function AG.generate_all()
     assets.sfx = AG.gen_sfx()
     assets.music = AG.gen_music()
 
-    -- Системный шрифт для UI (растягивается nearest для пиксельного стиля)
-    assets.font_small = love.graphics.newFont(8)
+    -- UI-шрифт: DejaVu Sans (бандл assets/font.ttf) — поддерживает кириллицу.
+    -- Фолбэк на системный шрифт LÖVE, если ассет недоступен.
+    local font_path = "assets/font.ttf"
+    local ok = love.filesystem.getInfo(font_path) ~= nil
+    if ok then
+        assets.font_small = love.graphics.newFont(font_path, 8)
+        assets.font_medium = love.graphics.newFont(font_path, 12)
+        assets.font_large = love.graphics.newFont(font_path, 24)
+    else
+        assets.font_small = love.graphics.newFont(8)
+        assets.font_medium = love.graphics.newFont(12)
+        assets.font_large = love.graphics.newFont(24)
+    end
     assets.font_small:setFilter("nearest", "nearest")
-    assets.font_medium = love.graphics.newFont(12)
     assets.font_medium:setFilter("nearest", "nearest")
-    assets.font_large = love.graphics.newFont(24)
     assets.font_large:setFilter("nearest", "nearest")
 
     return assets
