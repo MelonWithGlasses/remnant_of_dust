@@ -1,20 +1,12 @@
--- HUD: синапсы (HP), перегрев, миникарта, комбо, активный предмет, уведомления.
+-- HUD: синапсы (HP), перегрев, миникарта, комбо.
 local M = {}
 M.__index = M
-
-local RARITY_COLOR = {
-    common    = {0.7, 0.9, 0.7, 1},
-    rare      = {0.4, 0.6, 1.0, 1},
-    epic      = {0.7, 0.4, 1.0, 1},
-    legendary = {1.0, 0.8, 0.3, 1},
-}
 
 function M.new(ctx)
     local self = setmetatable({}, M)
     self.ctx = ctx
     self.assets = ctx.assets
     self.font = ctx.assets.font_small
-    self.font_med = ctx.assets.font_medium
     return self
 end
 
@@ -140,75 +132,6 @@ local function draw_minimap(self, floor, current_id, x, y)
     love.graphics.setColor(1, 1, 1, 1)
 end
 
-local function draw_active(self, player, x, y)
-    local size = 14
-    love.graphics.setColor(0.05, 0.07, 0.12, 0.85)
-    love.graphics.rectangle("fill", x, y, size, size)
-    local def = player.active_item
-    if def then
-        local rc = RARITY_COLOR[def.rarity] or RARITY_COLOR.common
-        love.graphics.setColor(rc[1], rc[2], rc[3], 0.9)
-    else
-        love.graphics.setColor(0.3, 0.3, 0.4, 0.8)
-    end
-    love.graphics.rectangle("line", x, y, size, size)
-    if def then
-        local img = self.assets.sprites.items[def.id]
-        if img then
-            love.graphics.setColor(1, 1, 1, 1)
-            love.graphics.draw(img, x + (size - img:getWidth()) / 2,
-                y + (size - img:getHeight()) / 2)
-        end
-        -- Полоса кулдауна (вертикальная заливка снизу)
-        if player.active_cooldown > 0 then
-            local s = def.stat_modifiers or {}
-            local max_cd = s.active_cooldown or 6.0
-            local pct = math.min(1, player.active_cooldown / max_cd)
-            love.graphics.setColor(0, 0, 0, 0.7)
-            love.graphics.rectangle("fill", x, y, size, size * pct)
-            love.graphics.setColor(1, 1, 1, 0.9)
-            love.graphics.print(string.format("%.1f", player.active_cooldown),
-                x + size + 2, y + size / 2 - 4)
-        else
-            love.graphics.setColor(0.7, 0.9, 1, 0.8)
-            love.graphics.print("ПКМ", x + size + 2, y + size / 2 - 4)
-        end
-    end
-    love.graphics.setColor(1, 1, 1, 1)
-end
-
-local function draw_pickup_notice(self, player)
-    local n = player.pickup_notice
-    if not n then return end
-    local def = n.def
-    local img = self.assets.sprites.items[def.id]
-    local rc = RARITY_COLOR[def.rarity] or RARITY_COLOR.common
-    -- Появление: fade-in 0.2s, hold, fade-out 0.4s
-    local a = 1
-    if n.timer > 2.8 then a = (3.0 - n.timer) / 0.2
-    elseif n.timer < 0.4 then a = n.timer / 0.4 end
-
-    local cx, bottom = 160, 160
-    love.graphics.setFont(self.font_med)
-    local tw = self.font_med:getWidth(def.name)
-    local panel_w = math.max(tw + 28, 60)
-    local panel_h = 22
-    local px = cx - panel_w / 2
-    local py = bottom - panel_h
-    love.graphics.setColor(0, 0, 0, 0.7 * a)
-    love.graphics.rectangle("fill", px, py, panel_w, panel_h)
-    love.graphics.setColor(rc[1], rc[2], rc[3], a)
-    love.graphics.rectangle("line", px, py, panel_w, panel_h)
-
-    if img then
-        love.graphics.setColor(1, 1, 1, a)
-        love.graphics.draw(img, px + 4, py + (panel_h - img:getHeight()) / 2)
-    end
-    love.graphics.setColor(rc[1], rc[2], rc[3], a)
-    love.graphics.print(def.name, px + 20, py + 7)
-    love.graphics.setColor(1, 1, 1, 1)
-end
-
 function M:draw(player, floor, current_room_id, combo)
     love.graphics.setFont(self.font)
 
@@ -216,8 +139,6 @@ function M:draw(player, floor, current_room_id, combo)
     draw_synapses(self, player, 4, 4)
     -- Перегрев под синапсами
     draw_heat(self, player, 4, 14)
-    -- Активный предмет (под перегревом)
-    draw_active(self, player, 4, 22)
     -- Миникарта (top-right)
     draw_minimap(self, floor, current_room_id, 320 - 64, 4)
 
@@ -230,14 +151,10 @@ function M:draw(player, floor, current_room_id, combo)
 
     -- Глиальный счётчик и DNA
     love.graphics.setColor(0.4, 1, 0.6, 1)
-    love.graphics.print("GLI " .. player.glial_count .. "/3", 4, 40)
+    love.graphics.print("GLI " .. player.glial_count .. "/3", 4, 24)
     love.graphics.setColor(0.6, 0.4, 1, 1)
-    love.graphics.print("DNA " .. player.dna_count, 4, 48)
+    love.graphics.print("DNA " .. player.dna_count, 4, 32)
     love.graphics.setColor(1, 1, 1, 1)
-
-    -- Уведомление о подобранном предмете (внизу по центру)
-    draw_pickup_notice(self, player)
-    love.graphics.setFont(self.font)
 end
 
 return M

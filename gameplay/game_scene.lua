@@ -6,10 +6,8 @@ local enemy_mod = require("gameplay.enemy")
 local room_mod = require("gameplay.room")
 local projectile_mod = require("gameplay.projectile")
 local pickup_mod = require("gameplay.pickup")
-local item_mod = require("gameplay.item")
 local floor_gen = require("gameplay.floor_generator")
 local hud_mod = require("ui.hud")
-local inventory_ui_mod = require("ui.inventory_ui")
 
 local M = {}
 M.__index = M
@@ -53,8 +51,6 @@ function M:enter(ctx, params)
     start_room.camera = self.camera
 
     self.hud = hud_mod.new(ctx)
-    self.inventory_ui = inventory_ui_mod.new(ctx)
-    self.show_inventory = false
     self.combo = 0
     self.combo_timer = 0
 
@@ -86,8 +82,6 @@ function M:enter_room(room)
             enemy_count = love.math.random(3, 5)
         elseif room.type == "boss" then
             enemy_count = 1   -- заглушка: один «жирный» враг как промежуточный босс
-        elseif room.type == "shop" or room.type == "altar" then
-            enemy_count = 0
         else
             enemy_count = love.math.random(2, 4)
         end
@@ -105,28 +99,6 @@ function M:enter_room(room)
             self:spawn_enemy(id, ex, ey)
         end
         room.enemies_spawned = true
-    end
-
-    -- Спавн предметов в особых комнатах (один раз)
-    if not room.items_spawned then
-        room.items = room.items or {}
-        if room.type == "shop" then
-            -- 3 предмета на постаментах, требуют ДНК
-            local choices = self:pick_items({"axon", "dendrite", "ribosome_shield", "axon_accel", "myelin_layer", "glycine"}, 3)
-            for i, def in ipairs(choices) do
-                local price = (def.rarity == "rare" and 3) or (def.rarity == "epic" and 5) or 2
-                local rx = room.x + room.w * (0.25 + (i - 1) * 0.25)
-                local ry = room.y + room.h * 0.45
-                table.insert(room.items, item_mod.new(def, rx, ry, self.assets, price))
-            end
-        elseif room.type == "altar" then
-            -- 1 редкий/эпический предмет бесплатно (на алтаре)
-            local choices = self:pick_items({"viral_vector", "mito_drain", "vampiric", "quantum_rift", "biomass"}, 1)
-            for _, def in ipairs(choices) do
-                table.insert(room.items, item_mod.new(def, room.x + room.w / 2, room.y + room.h / 2, self.assets, 0))
-            end
-        end
-        room.items_spawned = true
     end
 
     if #room.enemies > 0 then
@@ -152,34 +124,6 @@ function M:spawn_enemy(id, x, y)
     local e = enemy_mod.new(def, x, y, self.assets)
     table.insert(self.current_room.enemies, e)
     return e
-end
-
--- Выбрать N случайных уникальных предметов по списку id
-function M:pick_items(ids, n)
-    local pool = {}
-    for _, id in ipairs(ids) do
-        if items_by_id[id] then table.insert(pool, items_by_id[id]) end
-    end
-    -- Перемешать (Fisher–Yates)
-    for i = #pool, 2, -1 do
-        local j = love.math.random(1, i)
-        pool[i], pool[j] = pool[j], pool[i]
-    end
-    local out = {}
-    for i = 1, math.min(n, #pool) do out[i] = pool[i] end
-    return out
-end
-
--- Подбор пол-предмета (item), вызывается по E или при покупке.
--- Возвращает true, если предмет был добавлен.
-function M:try_pickup_item(item)
-    if not item or item.collected then return false end
-    local def = item:try_pickup(self.player)
-    if not def then return false end
-    self.player:add_item(def)
-    self.ctx.audio:play_sfx("pickup", 1.2)
-    self.ctx.renderer:flash({1, 1, 1, 0.25}, 0.15)
-    return true
 end
 
 -- ===== Подбор предмета (вызывается из update) =====
@@ -227,13 +171,6 @@ function M:update(dt)
     local ctx = self.ctx
     local room = self.current_room
     local player = self.player
-
-    -- Инвентарь: всё остальное замораживается (только эффекты на фоне)
-    if self.show_inventory then
-        self.inventory_ui:update(dt, player)
-        self.ctx.renderer:update(dt)
-        return
-    end
 
     -- Игрок
     player:update(dt, ctx.input, self.projectile_pool, room)
@@ -310,26 +247,6 @@ function M:update(dt)
         end
     end
 
-    -- Предметы на полу (item.lua)
-    if room.items then
-        local nearest, nearest_d = nil, 1e9
-        for i = #room.items, 1, -1 do
-            local it = room.items[i]
-            it:update(dt, player)
-            if it.collected then
-                table.remove(room.items, i)
-            else
-                local d = utils.dist_sq(it.x, it.y, player.x, player.y)
-                if d < 14 * 14 and d < nearest_d then
-                    nearest, nearest_d = it, d
-                end
-            end
-        end
-        self.pickup_target = nearest
-    else
-        self.pickup_target = nil
-    end
-
     -- Комбо таймер
     if self.combo_timer > 0 then
         self.combo_timer = self.combo_timer - dt
@@ -380,58 +297,9 @@ function M:update(dt)
 end
 
 function M:keypressed(key)
-    if key == "tab" then
-        self.show_inventory = not self.show_inventory
-        return
-    end
-    if self.show_inventory then
-        if key == "escape" then
-            self.show_inventory = false
-        end
-        return
-    end
-    if key == "e" then
-        if self.pickup_target then
-            self:try_pickup_item(self.pickup_target)
-            self.pickup_target = nil
-        end
-        return
-    end
-    if key == "space" then
-        self.player:use_active(self:build_active_ctx())
-        return
-    end
     if key == "escape" or key == "p" then
         require("core.engine").push("pause")
     end
-end
-
-function M:mousepressed(x, y, button)
-    if self.show_inventory then
-        local mx, my = self.ctx.input:get_mouse_logical()
-        local def, dx, dy = self.inventory_ui:mousepressed(mx, my, button, self.player)
-        if def then
-            self.current_room.items = self.current_room.items or {}
-            -- Спавним обратно как item-на-полу (без цены)
-            table.insert(self.current_room.items, item_mod.new(def, dx, dy, self.assets, 0))
-        end
-        return
-    end
-    if button == 2 then
-        -- ПКМ — активный протокол
-        self.player:use_active(self:build_active_ctx())
-    end
-end
-
-function M:build_active_ctx()
-    return {
-        room = self.current_room,
-        projectile_pool = self.projectile_pool,
-        renderer = self.ctx.renderer,
-        audio = self.ctx.audio,
-        input = self.ctx.input,
-        camera = self.camera,
-    }
 end
 
 function M:draw()
@@ -449,11 +317,6 @@ function M:draw()
         for _, pu in ipairs(room.pickups) do pu:draw() end
     end
 
-    -- Предметы на полу
-    if room.items then
-        for _, it in ipairs(room.items) do it:draw() end
-    end
-
     -- Враги
     for _, e in ipairs(room.enemies) do e:draw() end
 
@@ -462,14 +325,6 @@ function M:draw()
 
     -- Игрок
     self.player:draw()
-
-    -- «Нажмите E» над ближайшим предметом
-    if self.pickup_target and not self.show_inventory then
-        local it = self.pickup_target
-        love.graphics.setColor(0.9, 0.95, 1, 0.85 + 0.15 * math.sin(love.timer.getTime() * 6))
-        love.graphics.printf("E", it.x - 10, it.y - 18, 20, "center")
-        love.graphics.setColor(1, 1, 1, 1)
-    end
 
     -- Партиклы
     self.ctx.renderer:draw_particles()
@@ -500,11 +355,6 @@ function M:draw()
 
     -- HUD
     self.hud:draw(self.player, self.floor, self.current_room_id, self.combo)
-
-    -- Инвентарь (поверх HUD)
-    if self.show_inventory then
-        self.inventory_ui:draw(self.player)
-    end
 end
 
 return M
